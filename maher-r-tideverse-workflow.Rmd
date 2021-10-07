@@ -1,0 +1,782 @@
+---
+title: "Tidyverse and Dplyr Basics"
+subtitle: "Northwestern University"
+author: "Maher Said"
+date: "October 7, 2021"
+output: html_notebook
+---
+
+### Quick rundown of RMarkdown
+
+**Why *RMarkdown*?**
+
+For those of you who user R *jupyter* users, RMarkdown is (in my opinion) a better venue for your R code. For those of you who never heard of these, RMarkdown is:
+
+1. A way of running your *large* code in small chunks
+2. Keeping your code presentable
+3. Being able to write notes to your code file directly (including math and figures!)
+4. Not losing control (or your mind) once you have so much going on
+5. Simplifying the process of sharing code and results with others
+6. Tidier result outputs (such as HTML tables instead of space-delimited)
+
+It's not without it downsides though, the major one being:
+
+1. Cannot externally run an RMarkdown file in another code or through command prompt (e.g. you cannot use `source(my_rmarkdown.Rmd)`)
+
+
+**How does one use RMarkdown?**
+
+You create an *R Notebook* or *R Markdown* file. RMarkdown has 3 main parts:
+
+1. <u>Header</u>: this is where you put some of information and instructions relevant for RMarkdown.
+
+```{}
+---
+title: "Taking R to the Next Level"
+subtitle: "Tips and tricks to streamline your workflow"
+author: "Maher Said"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+```
+
+
+2. <u>Narrative</u>: non-code text/math/figures just like this one!
+
+    * <marquee direction="right">You can use HTML to do useful things... or not.</marquee>
+    * You can use $\LaTeX$ for math:<br>$\displaystyle \lim_{x \to \infty} f(x)$
+    * Add figures:<br>![](https://media1.giphy.com/media/NS7gPxeumewkWDOIxi/200.gif)
+    * Etc.
+
+You don't really need to use HTML for most intents and purposes, so do not fret! $\LaTeX$ is a bonus in our field, but you could always present your math in different way (e.g. `lim(x->Inf)[f(x)]`).
+
+3. <u>Chunks</u>: this is where you put all your code
+Initiated with `` ```{language chunk_title, modifiers} `` and ended with `` ``` ``. You'll see a few modifiers in this file. You can even run another language in different chunks (may require some setup for languages other than R, such as *python*).
+
+This is what a chunk would look like:
+
+```{r Sample Chunk}
+print("Hello World!")
+```
+
+
+### Setup
+
+Uncomment the below code if this is your first time using these packages (or if you need to update them).
+
+```{r Installing Required Packages}
+#install.packages("tidyverse")
+#install.packages("magrittr")
+#install.packages("glue")
+```
+
+
+The following code the libraries we need for this workshop. Notice the chunk options `error=FALSE` and `message=FALSE`; that's so the information printed in code about library loading doesn't show up in the HTML file.
+```{r Loading Packages/Libraries, error=FALSE, message=FALSE}
+library(tidyverse)
+library(magrittr)
+```
+
+
+### Part 1: Piping
+Piping is one of my favorite tools in R, and in my opinion is what makes R stand out from other languages. The concept of piping is that you can chain functions to one another without having to (1) create a variable for every step and/or (2) ending up with illegibly messy code. Let's look at a toy example below.
+
+The basic pipe operator is in the dplyr package from the tidyverse universe (`%>%`). R has recently added its own native pipe that works exactly the same (`|>`). A lot of people still use `%>%` out of habit.
+
+
+```{r Creating Toy Vector & Implementing Arithmetics}
+# Creating a vector of 10 negative integers
+set.seed(1) # setting random number generation seed to 1 so that we all get the same values
+
+vector <- -sample.int(100, 10)
+print(vector)
+
+
+# Some random arithmetic as a toy example
+## Approach 1: create a variable every step
+avg <- mean(vector)
+abs_avg <- abs(avg)
+sqrt_abs_avg <- sqrt(abs_avg)
+rnd_sqrt_abs_avg <- round(sqrt_abs_avg, 2)
+print(rnd_sqrt_abs_avg)
+
+
+## Approach 2: function within function
+output <- round(sqrt(abs(mean(vector))), 2)
+print(output)
+```
+
+Approach 1 suffers from requiring a creating a variable at every step, not only requiring us to figure out appropriate, legible, yet brief names, but also crowding our global environment. That may not be an issue for small codes, but a crowded global environment could become a hassle for larger codes.
+
+Approach 2 resolves the issue above, only creating a single output variable (which we care about), but requires you to think of the problem backwards (end-to-start): `round` <- `sqrt` <- `abs` <- `mean` <- `vector`. It also gets messy quick once you start including other function parameters.
+
+This is where piping comes in...
+
+```{r Example of Piping}
+## Approach 3: piping
+output <- vector %>%
+  mean() %>%
+  abs() %>%
+  sqrt() %>%
+  round(2)
+
+print(output)
+```
+
+`%>%` passes an element as the **FIRST** parameter to the next function in line. In other words, `some_variable %>% round(2)` is the equivalent of `round(some_variable, 2)`. In our toy example, *Approach 3* is translated to exactly the line of code we see in *Approach 2*.
+
+The way I like to describe `%>%` is by "**and then**". The way I would think of, code and read the above snippet is as "take the mean, **and then** the absolute value, **and then** the square-root, **and then** round it to two decimal places."
+
+<u>Extra info:</u> If a function only takes one parameter (the piped element), we can remove the parentheses following the function, although it might not be recommended for clarity/legibility (it's useful though for scratch-codes).
+
+```{r Alternative Example of Piping}
+## Approach 3-alt: less parentheses
+vector %>%
+  mean %>%
+  abs %>%
+  sqrt %>%
+  round(2) %>%
+  print
+```
+
+
+### Part 2: dplyr basics (select, mutate, filter)
+
+`dplyr` is a part of the *tidyverse* family that tries to streamline data manipulation by (1) making use of SQL concepts, (2) providing a lot of useful tools, (3) doing almost all operations column-wise (with a way around that) and (4) being built with piping in mind.
+
+We're going to be working with [New York Times COVID-19 data](https://github.com/nytimes/covid-19-data), specifically college data.
+
+```{r Load NYT COVID-19 data}
+df <- read_csv("https://raw.githubusercontent.com/nytimes/covid-19-data/master/colleges/colleges.csv")
+```
+
+Note that we have used the *dplyr* version of `read_csv` instead of R's `read.csv`. Both work well, but `read_csv` (1) is a bit more flexible and (2) outputs a *tibble* instead of *data.frame*. What is a *tibble*? For most intents and purposes at a basic level, it's a fancier (and tidier) version of *data.frame*. *dplyr* functions will almost always convert *data.frames* to *tibbles*. Most of the time, that is not an issue, but it is worth keeping in mind because some packages do not handle *tibbles*.
+
+One obvious difference of *tibble* and *data.frame* is in printing in the console (try running `head(df)` versus `head(as.data.frame(df))` in your console.
+
+```{r Inspecting original dataframe}
+df
+```
+
+Let's get a quick idea of what the data looks like
+```{r Checking column names}
+names(df)
+```
+
+```{r Getting a summary of the data}
+summary(df)
+```
+
+A quick description of data columns:
+
+* `date`: date of last update
+* `state`, `county`, `city`: college location
+* `ipeds_id`: college ID
+* `college`: college
+* `cases`: total number of cases
+* `cases_2021`: number of cases for 2021 only
+* `notes`: additional notes
+
+#### select()
+
+R already has a few built in methods of selecting columns, but `dplyr::select()` is a powerful and tidier selection tool, especially when combined with piping.
+
+For this exercise, we don't really need the `date`, `ipeds_id` and `notes` columns, so let's select all other columns instead.
+
+Let's start with one of the base R ways of doing this.
+
+```{r}
+## Base R
+df[c("state", "county", "city", "college", "cases", "cases_2021")]
+```
+
+You could use number to make it more brief, but this is only viable because our dataset has a small number of columns.
+```{r}
+## Base R
+df[c(2:4,6:8)]
+```
+
+
+Let's use `select()`.
+
+```{r}
+## dplyr
+df %>%
+  select(state, county, city, college, cases, cases_2021)
+```
+
+Not shown here is the fact that `select()`, by using variable names directly instead of through strings, offers autocompletion as you type. Try it out. Fill in the missing `cases_2021`.
+
+```{r}
+## dplyr
+df %>%
+  select(state, county, city, college, cases)
+```
+
+You can do this numerically here too (still, I advise against this for most dataframe applications).
+```{r}
+## dplyr
+df %>%
+  select(2:4,6:8)
+```
+
+Notice how with numbers we can use ranges (`2:4` instead of `2,3,4`)? You can do the same with variable names in `select()`.
+```{r}
+## dplyr
+df %>%
+  select(state:city, college:cases_2021)
+```
+
+Whether in `dplyr` or base R, order matters.
+```{r}
+## dplyr
+df %>%
+  select(cases, cases_2021, state, county, city, college)
+```
+
+
+It would make more sense here to specify the columns we want to REMOVE instead. The more complex your selection process starts to get, the more `select()` will start to shine.
+
+```{r}
+## Base R
+df[!(names(df) %in% c("date", "ipeds_id", "notes"))]
+```
+
+```{r}
+## dplyr
+df %>%
+  select(-date, -ipeds_id, -notes)
+```
+
+`select()` also has some cool beginner-friendly modifiers that you can use for powerful selection rules:
+
+* `last_col()`: select the last column
+* `starts_with(s)`: select columns starting with string s
+* `ends_with(s)`: select columns ending with string s
+* `contains(s)`: select columns containing string s
+
+Let's try and replicate our previous selection using `starts_with()`.
+
+```{r}
+## dplyr
+df %>%
+  select(state, starts_with("c"))
+```
+
+Here, we are lucky that with the exception of `state`, all the variables we want to keep start with "c". Want to see what this looks like in base R? This requires some knowledge about *regex*, don't worry about that for now.
+```{r}
+## Base R
+df[grep('^(c|state)', names(df))]
+```
+
+Using `where()`, you can also select using some conditions based on the contents of the columns, such as character columns or numeric columns.
+```{r}
+## dplyr
+df %>%
+  select(where(is.numeric))
+```
+
+
+Finally, you can rename variables during the selection process! Note that `dplyr` has a function `rename()` for when you want to rename specific columns without the selection process.
+```{r}
+## dplyr
+df %>%
+  select(state, county, city, college, cases_total=cases, cases_2021)
+```
+
+#### mutate()
+
+Mutate is another great tool, with a simple premise: allowing you to do operations on columns sequentially without needing to keep creating newer variables/dataframes in the process. You will start seeing how piping comes into play here.
+
+Let's separate the 2020 cases from cases_total. In base R first.
+
+```{r}
+# Base R  
+df_baseR <- df[c("state", "county", "city", "college", "cases", "cases_2021")] # selecting
+names(df_baseR)[which(names(df_baseR) == "cases")] <- "cases_total" # renaming
+df_baseR$cases_2020 <- df_baseR$cases_total - df_baseR$cases_2021 # mutating
+df_baseR <- df_baseR[c(1:5,7,6)] # reordering
+
+df_baseR
+```
+
+```{r}
+## dplyr
+df_tidy <- df %>%
+  
+  # doing the same selection & renaming from before
+  select(state, county, city, college, cases_total=cases, cases_2021) %>%
+  
+  # mutating
+  mutate(cases_2020 = cases_total - cases_2021,
+         .before = cases_2021)
+```
+
+Notice the use of `.before` to specify where we want the ne variables to be created? There's also `.after`. You don't need to use either if you don't care about order, in which case the variables are added to the end of the dataframe.
+
+We also saved the new dataframe into `df_tidy` so that we don't keep repeating the previos operations.
+
+You can also refer to variables you created in earlier calls within the same `mutate()` call as well as do operations other than arithmetic.
+```{r}
+df_tidy %>%
+  mutate(cases_perc_2020 = cases_2020/cases_total,
+         cases_perc_2021 = 1 - cases_perc_2020,
+         state = tolower(state))
+```
+
+Mutate also has a useful tool, `across()`, that allows us to apply the same (or multiple) functions to a selection of variables. You don't need to explicitly state `.cols =` and `.fns =`, but I prefer to include them for legibility.
+```{r}
+df_tidy %>%
+  mutate(across(
+    .cols = c(state:college),
+    .fns = tolower
+  ))
+```
+
+Note that the above is a simplified version of across where you use a single-parameter function. With multiple paramter functions, you need to use the `~` right before the function name and pass your `.cols` as `.x` in the function. Easier to see in the example below.
+
+```{r}
+df_tidy %>%
+  mutate(across(
+    .cols = c(state:college),
+    .fns = ~tolower(.x)
+  ))
+```
+
+Across can do much more, but we'll get into more details later.
+
+#### filter()
+
+Notice how `select()` operated column-wise? `filter()` is the row-wise couse of `select()`. It allows you to conditionally select rows to keep in a dataframe, such as data only from Illinois. First, with base R.
+
+```{r}
+## Base R
+df_baseR[df_baseR$state == "Illinois",]
+```
+
+
+```{r}
+## dplyr
+df_tidy %>%
+  filter(state == "Illinois")
+```
+
+You can also have multiple conditions or write complex conditions (using `&` and `|`).
+```{r}
+## dplyr
+df_tidy %>%
+  filter(state == "Illinois",
+         county == "Cook",
+         city == "Evanston")
+```
+
+```{r}
+## dplyr
+df_tidy %>%
+  filter(city == "Evanston" | city == "Chicago")
+```
+
+
+### Part 3: dplyr & tidyr intermidiate tools (summarize, group_by, pivot_longer, pivot_wider)
+
+#### summarize()
+
+`summarize()` is very powerful and speeding up your data analysis. `summarize()` allows us to convert the dataframe into a small table of summary statistics as specified by the user.
+
+Let's get the mean, sd and var for our numeric variables. Notice how we pass multiple functions as a list.
+
+```{r}
+df_tidy %>%
+  
+  # removing rows with NAs
+  drop_na() %>%
+  
+  # summarizing
+  summarize(across(.cols = where(is.numeric),
+                   .fns = list(mean, sd, var)))
+```
+
+Difficult to tell which is which, right? Let's specify the names of the summary outputs.
+```{r}
+df_summ <- df_tidy %>%
+  
+  # removing rows with NAs
+  drop_na() %>%
+  
+  # summarizing
+  summarize(across(.cols = where(is.numeric),
+                   .fns = list(avg=mean, stddev=sd, var=var)))
+
+df_summ
+```
+
+
+Again, worth keeping in mind your tolerance for ambiguity versus simplicity. Here we adopted a mix of simplicity and verboseness.
+
+#### group_by()
+`group_by()` is one of those tools that takes a bit to 'click', but can streamline and reduce your work efforts immensely once you get the hang of it. It's also very useful in conjunction with `summarize()`.
+
+What `group_by()` is group different rows by some condition/variable, and afterwards implement operations for each group seperately, while keeping the data as a whole a part of the same dataframe.
+
+Let's create a similar summary as above (just for means this time), but for each state instead of all US campuses.
+
+```{r}
+df_tidy %>%
+  
+  # removing rows with NAs
+  drop_na() %>%
+  
+  # grouping by state
+  group_by(state) %>%
+  
+  # summarizing // same as the above example
+  summarize(across(.cols = where(is.numeric),
+                   .fns = list(avg=mean))) %>%
+  
+  # let's tidy a bit more here
+  mutate(across(.cols = where(is.numeric),
+                .fns = round))
+```
+
+Outside of `summarize()`, a use for `group_by()` is doing operations within a group only. Here's a practical example. Assume you want to get the number of distinct campuses per state in a separate column of the data frame.
+
+```{r}
+df_tidy %>%
+  
+  # removing rows with NAs
+  drop_na() %>%
+  
+  # selecting a few columns for legibilit
+  select(state, college, cases_total) %>%
+  
+  # grouping by state
+  group_by(state) %>%
+  
+  # mutating
+  mutate(n_camps = n_distinct(college))
+```
+
+Notice how the dataframe has 56 groups? One perk of using `group_by()` with `summarize()` is that `summarize()` removes the grouping when complete. In other operations, we'll need to manually `ungroup()` once we're done with grouped operations. Let's do that while showing how this is useful in a more complex example that would be useful on a website about COVID for example. We're not covering `glue()` from the `glue` package today, but we're demonstrating it below for reference.
+
+```{r}
+web_text = df_tidy %>%
+  drop_na() %>%
+  select(state, college, cases_total) %>%
+  group_by(state) %>%
+  
+  # mutating to get mean and # of distinct colleges (per group)
+  mutate(cases_avg = mean(cases_total),
+         n_camps = n_distinct(college)) %>%
+  
+  # ouputing results as text
+  mutate(text = glue::glue("{college} is in {state}, which has a total of {n_camps} campuses and an average of {round(cases_avg)} cases per campus.")) %>%
+  
+  #ungrouping
+  ungroup()
+
+web_text
+
+sample(web_text$text, 5)
+```
+
+
+#### pivot_longer() and pivot_wider()
+
+`pivot_longer()` and `pivot_wider()` are very powerful tools with a lot of tweaking potential. This workshops introduces you to the basics of these functions, but they are fare more powerful than we're demonstrating today - at the cost of requiring more advanced understanding of these functions. Let's start with the basics. To simplify, let's extract a smaller dataset from our `df_tidy`.
+
+```{r}
+df_small <- df_tidy %>%
+  select(college:cases_2021) %>%
+  drop_na %>%
+  sample_n(10)
+  
+df_small
+```
+
+The dataframe above would be described as *wide data*. In other words, each college/entity has a **single row** with all the data across multiple columns. The alternative is *long data*, where colleges/entities would have their data spread across **multiple rows** (regardless of the number of columns). `pivot_longer()` and `pivot_winder()` let's us switch between the two.
+
+Why is this useful? The simplest use is for formatting purposes and presenting the data in your preferred way. The more intermediate answer is for plotting and hooking into other functions/packages that expect the data to be in a specific format. The advanced answer is for advanced data manipulation. When you get really comfortable with pivoting, you will find yourself pivoting a few times in conjunction with other tools (such as `group_by()` and `summarize()`) within the same pipe chain.
+
+Let's pivot our `df_small()` to longer. With pivoting, I suggest to always check the documentation:
+
+https://tidyr.tidyverse.org/reference/pivot_longer.html
+
+https://tidyr.tidyverse.org/reference/pivot_wider.html
+
+```{r}
+df_small %>%
+  pivot_longer(
+    
+    cols = -college,          # The columns which you want to pivot into longer; here the `cases` columns.
+                              # In this case, it's all columns other than `college`.
+    
+    names_to = "time",        # A new column where the NAMES of your columns will be moved to.
+    
+    values_to = "cases"       # A new column where the CONTENT of your columns will be move to.
+    
+  )
+  
+```
+
+Now that you see the outcome, easy? Right? The `time` column can be improved since we don't need the prefix `cases_`. If you look at the documentation for `pivot_longer()`, you see there's an option to account for that.
+
+```{r}
+df_long <- df_small %>%
+  pivot_longer( cols = -college,
+                names_to = "time",
+                names_prefix = "cases_", # removes prefixes when moving column names
+                values_to = "cases")
+
+df_long
+```
+
+In this format, you can easily take this data straight into the popular `ggplot2` package (which we're not covering in this workshop beyond an example).
+```{r}
+df_long %>%
+  
+  # we don't need the total for our plot, remember filter()?
+  filter(time != "total") %>%
+
+  # ggplot
+  ggplot(aes(x = college,    # the x-axis variable
+             y = cases,      # the y-axis variable
+             group = time,   # grouping by time
+             fill = time)) + # giving every time "group" a different color
+                             # ggplot's version of piping uses `+` instead of `%>%` as it predates piping
+  
+  geom_bar(stat = "identity") + # bar plot
+  
+  coord_flip() # flip so that it's horizontal bar plot
+```
+
+For more advanced use of `pivot_longer()` note that you don't only have to pivot from many columns to 1. You can move data from multiple columns to multiple columns, you can pivot from 1 column to multiple columns, you can use pattern detection, you can use *regex*, etc. Take a look at the documentation for more information when you're ready!
+
+A quick example of the power of `pivot_longer()`. Do not worry about understanding this today, but know that you can do this if you ever need to! Let's use `df_summ` from earlier.
+
+```{r}
+df_summ
+```
+
+
+```{r}
+df_summ %>%
+  pivot_longer(
+    
+    cols = everything(),
+    
+    names_pattern = "cases_(.*)_(.*)", # Let's extract everything `(.*)` between the 1st and 2nd underscore
+                                       # Let's extract everything `(.*)` after the 2nd underscore
+    
+    names_to = c("time", ".value"),    # The first item we extracted is moved to the "time" column
+                                       # The second set of items we extracted ARE THEMSELVES column names
+                                       #   for their respective values (".value" is a special input)
+    
+  )
+```
+
+
+
+Let's flip `df_long` back to wide to demonstrate `pivot_wider()`.
+```{r}
+df_long %>%
+  pivot_wider(
+    
+    names_from = time,   # The column from which to grab the names from; in our case: "time".
+                         # Notice how we don't need quotation marks here unlike `pivot_longer()`?
+                         # The column "time" already exist, we're not creating it, so we can refer to it directly.
+    
+    values_from = cases  # The column from which to grab the values from
+    
+  )
+```
+
+We are missing the `cases_` prefix in the column names. Let's fix that!
+
+```{r}
+df_long %>%
+  pivot_wider(names_from = time,
+              names_prefix = "cases_",
+              values_from = cases)
+```
+
+Similar to `pivot_long()` above, just know `pivot_wide()` can also do more advanced pivoting that we're not covering here!
+
+### Part 4 -- Appendix: stringr
+
+We will not be delving much into `stringr`/*regex*, but we want to let you know these tools exist if you ever want to do some text manipulation. Even if you never work directly with text, you likely will need to have an understanding of these tool even if to simply extract numerical/categorical values that are embedded in strings.
+
+Let's show some of the basics of `stringr` before showing a working example. These are, for the most part, self-explanatory.
+
+#### useful stringr functions
+
+```{r}
+states <- df$state %>% unique %>% head(5)
+
+print(states)
+```
+
+```{r}
+str_length(states)
+```
+
+
+```{r}
+str_to_lower(states)
+```
+
+```{r}
+str_sub(states, 1, 3)
+```
+
+```{r}
+str_subset(states, "Ala")
+```
+
+```{r}
+str_detect(states, "Ala")
+```
+
+```{r}
+str_split(states, " ", simplify = TRUE) # splitting where a space character occurs
+                                        # using simplify to return matrix instead of list
+```
+
+```{r}
+str_replace(states, "Ala", "State of Ala")
+```
+
+```{r}
+str_remove(states, "a") # removes first instance of "a"
+str_remove_all(states, "a") # removes every instance of "a"
+```
+
+
+```{r}
+# the only non-self-explanatory function name is `str_c()`, standing for "str_combine"
+str_c(states[1], " is located in South-East U.S.")
+```
+
+```{r}
+# glue tries to replicate `str_c()` using more "human" syntax
+glue::glue("{states[1]} is located in South-East U.S.")
+```
+
+#### Working example
+
+Let's use some of the functions above in a working example using a fake dataset.
+
+```{r}
+df_fake <- tribble(~id, ~value,
+              1,   "male_276",
+              2,   "female_2",
+              3,   "male_95",
+              4,   "female_1,237",
+              5,   "female_27")
+
+df_fake
+```
+
+How do you separate the gender from the numerical value provided in our dataframe?
+
+Here's one non-regex method.
+
+```{r}
+# detect if "female" is mentioned or not
+df_clean <- df_fake %>%
+  mutate(female = str_detect(value, "female"))
+
+df_clean
+
+# split string and take the numeric part by splitting at the underscore and extracting the second set of strings
+df_clean <- df_clean %>%
+  mutate(number = str_split(value, "_", simplify = TRUE)[,2])
+
+df_clean
+
+# remove any nun-numeric characters in the numbers; here a comma
+df_clean <- df_clean %>%
+  mutate(number = str_remove_all(number, ","))
+
+df_clean
+
+# the number column is still a string, convert to numeric
+df_clean <- df_clean %>%
+  mutate(number = as.numeric(number))
+
+df_clean
+         
+```
+
+When you feel comfortable enough with the basics of this workshop, take it to the next level to learn more about *regex* here: https://r4ds.had.co.nz/strings.html
+
+We used *regex* in some of our examples earlier (`^(c|state)` and `cases_(.*)_(.*)`) and it is a very powerful tool when combined with stringr.
+
+To give you an example:
+
+```{r}
+s = str_c("Today is ", Sys.Date())
+
+print(s)
+```
+
+```{r}
+s %>%
+  str_replace(pattern = "([^\\d]*)(\\d{4})\\-(\\d{2})\\-(\\d{2})",
+              replacement = "\\1\\3/\\4/\\2")
+```
+
+For the moment, do not worry about understanding the pattern above for now. Once again, just know this is possible!
+
+
+### Part 5 -- Appendix: more piping
+
+There's a library we loaded earlier (`magrittr`) that we haven't used yet. `magrittr` has a set of specialized pipes that take `%>%` to the next level. Here are they:
+
+* `%<>%`: A shorthand for `x <- x %>%`
+* `%T>%`: Tee pipe; passes the output to the next operation and then the operation after it (useful for printing or plotting from within a pipe chain)
+* `%$%`: Pulls a column from a dataframe into a vector
+
+Examples of each below.
+
+
+#### %<>%
+
+```{r}
+df_small
+```
+
+```{r}
+df_small %<>% # equivalent to `df_small <- df_small %>%`
+  select(-cases_total)
+
+df_small
+```
+
+
+#### %T>%
+
+```{r}
+df_tidy %T>% # whatever the result of the next operation is will not be passed along to the rest of the chain
+  print() %>% 
+  select(state:city) %>%
+  filter(city == "Evanston")
+```
+
+Notice how we were able to print without breaking the piping chain? This pipe is very useful to share you results with others while showing them all major steps in your analysis/data manipulation.
+
+#### %$%
+
+```{r}
+df_small %$%
+  cases_2020
+```
+
+This code above is the same as `df_small$cases_2020`. Notice how the pipe even uses the `$` sign? It's useful when you want to keep your code cohesive in a single pipe but wanting to scale down to lower level variables (vectors, numeric, etc.).
+
+```{r}
+df_small %$%
+  cases_2020 %>%
+  sum()
+```
